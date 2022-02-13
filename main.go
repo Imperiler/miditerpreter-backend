@@ -3,82 +3,56 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
-	"path/filepath"
-
 	"gitlab.com/gomidi/midi/reader"
-	"gitlab.com/gomidi/midi/writer"
 )
 
-type printer struct{}
+type noteReader struct{}
 
-func (pr printer) noteOn(p *reader.Position, channel, key, vel uint8) {
-	fmt.Printf("Track: %v Pos: %v NoteOn (ch %v: key %v vel: %v)\n", p.Track, p.AbsoluteTicks, channel, key, vel)
+type note struct {
+	track    int16
+	position uint64
+	channel  uint8
+	key      uint8
+	vel      uint8
 }
 
-func (pr printer) noteOff(p *reader.Position, channel, key, vel uint8) {
-	fmt.Printf("Track: %v Pos: %v NoteOff (ch %v: key %v)\n", p.Track, p.AbsoluteTicks, channel, key)
+type score struct {
+	Items []note
 }
 
-func test_midi() {
-	dir := os.TempDir()
-	f := filepath.Join(dir, "smf-test.mid")
+var curScore = score{}
 
-	defer os.Remove(f)
+// AddItem adds item to current score array
+func (nt *score) AddItem(item note) {
+	nt.Items = append(nt.Items, item)
+}
 
-	var p printer
+func (pr noteReader) noteOn(p *reader.Position, channel, key, vel uint8) {
+	//fmt.Printf("Track: %v Pos: %v NoteOn (ch %v: key %v vel: %v)\n", p.Track, p.AbsoluteTicks, channel, key, vel)
+	nt := note{track: p.Track}
+	nt.position = p.AbsoluteTicks
+	nt.channel = channel
+	nt.key = key
+	nt.vel = vel
+	curScore.AddItem(nt)
+}
 
-	err := writer.WriteSMF(f, 2, func(wr *writer.SMF) error {
+func (pr noteReader) noteOff(p *reader.Position, channel, key, vel uint8) {
+	nt := note{track: p.Track}
+	nt.position = p.AbsoluteTicks
+	nt.channel = channel
+	nt.key = key
+	nt.vel = vel
+	curScore.AddItem(nt)
 
-		wr.SetChannel(11) // sets the channel for the next messages
-		writer.NoteOn(wr, 120, 50)
-		wr.SetDelta(120)
-		writer.NoteOff(wr, 120)
+	//fmt.Printf("Track: %v Pos: %v NoteOff (ch %v: key %v)\n", p.Track, p.AbsoluteTicks, channel, key)
+}
 
-		wr.SetDelta(240)
-		writer.NoteOn(wr, 125, 50)
-		wr.SetDelta(20)
-		writer.NoteOff(wr, 125)
-		writer.EndOfTrack(wr)
-
-		wr.SetChannel(2)
-		writer.NoteOn(wr, 120, 50)
-		wr.SetDelta(60)
-		writer.NoteOff(wr, 120)
-		writer.EndOfTrack(wr)
-		return nil
-	})
-
-	if err != nil {
-		fmt.Printf("could not write SMF file %v\n", f)
-		return
-	}
-
-	// to disable logging, pass mid.NoLogger() as option
+func readMidiFile(midiFilePath string) {
+	//var n note
+	var p noteReader
 	rd := reader.New(reader.NoLogger(),
-		// set the functions for the messages you are interested in
 		reader.NoteOn(p.noteOn),
-		reader.NoteOff(p.noteOff),
-	)
-
-	err = reader.ReadSMFFile(rd, f)
-
-	if err != nil {
-		fmt.Printf("could not read SMF file %v\n", f)
-	}
-
-	// Output: Track: 0 Pos: 0 NoteOn (ch 11: key 120 vel: 50)
-	// Track: 0 Pos: 120 NoteOff (ch 11: key 120)
-	// Track: 0 Pos: 360 NoteOn (ch 11: key 125 vel: 50)
-	// Track: 0 Pos: 380 NoteOff (ch 11: key 125)
-	// Track: 1 Pos: 0 NoteOn (ch 2: key 120 vel: 50)
-	// Track: 1 Pos: 60 NoteOff (ch 2: key 120)
-}
-
-func convertMidi(midiFilePath string) {
-	var p printer
-
-	rd := reader.New(reader.NoteOn(p.noteOn),
 		reader.NoteOff(p.noteOff),
 	)
 	err := reader.ReadSMFFile(rd, midiFilePath)
@@ -94,10 +68,8 @@ func main() {
 
 	flag.Parse()
 	if *actionPtr == "convert" {
-		convertMidi(*midiFileInPtr)
+		readMidiFile(*midiFileInPtr)
 	}
-
-	fmt.Printf("kill youself:", *actionPtr)
-	fmt.Printf("also kill youself:", *midiFileInPtr)
+	fmt.Println(len(curScore.Items))
 
 }
