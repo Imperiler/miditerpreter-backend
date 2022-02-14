@@ -7,9 +7,10 @@ import (
 	"gitlab.com/gomidi/midi/writer"
 )
 
-type noteReader struct{}
+type fileReader struct{}
 
-type noteOn struct {
+// Note individual noteon and noteoff messages
+type Note struct {
 	position reader.Position
 	channel  uint8
 	key      uint8
@@ -17,37 +18,36 @@ type noteOn struct {
 	noteOn   bool
 }
 
-type noteOff struct {
-	position reader.Position
-	channel  uint8
-	key      uint8
-	vel      uint8
-	noteOn   bool
-}
-
+// Notes a collection of notes
 type Notes struct {
-	notesOn  []noteOn
-	notesOff []noteOff
+	msg []Note
+}
+
+type Track struct {
+	name     string
+	position reader.Position
+	notes    Notes
+}
+
+type Tracks struct {
+	track []Track
 }
 
 type score struct {
-	Items []noteOn
+	Items []Note
 }
 
 var curScore = Notes{}
+var gScore = Tracks{}
 
-// AddNoteOn adds item to current score array
-func (nt *Notes) AddNoteOn(item noteOn) {
-	nt.notesOn = append(nt.notesOn, item)
+// AddNote adds item to current score array
+func (nt *Notes) AddNote(item Note) {
+	nt.msg = append(nt.msg, item)
 }
 
-func (nt *Notes) AddNoteOff(item noteOff) {
-	nt.notesOff = append(nt.notesOff, item)
-}
-
-func (pr noteReader) noteOn(p *reader.Position, channel, key, vel uint8) {
+func (pr fileReader) noteOn(p *reader.Position, channel, key, vel uint8) {
 	//fmt.Printf("Track: %v Pos: %v NoteOn (ch %v: key %v vel: %v)\n", p.Track, p.AbsoluteTicks, channel, key, vel)
-	nt := noteOn{}
+	nt := Note{}
 	nt.position.AbsoluteTicks = p.AbsoluteTicks
 	nt.position.Track = p.Track
 	nt.position.DeltaTicks = p.DeltaTicks
@@ -55,32 +55,37 @@ func (pr noteReader) noteOn(p *reader.Position, channel, key, vel uint8) {
 	nt.key = key
 	nt.vel = vel
 	nt.noteOn = true
-	curScore.AddNoteOn(nt)
+	curScore.AddNote(nt)
 }
 
-func (pr noteReader) noteOff(p *reader.Position, channel, key, vel uint8) {
-	nt := noteOff{}
+func (pr fileReader) noteOff(p *reader.Position, channel, key, vel uint8) {
+	nt := Note{}
 	nt.position.AbsoluteTicks = p.AbsoluteTicks
 	nt.position.Track = p.Track
 	nt.position.DeltaTicks = p.DeltaTicks
 	nt.channel = channel
 	nt.key = key
 	nt.vel = vel
-	nt.noteOn = true
-	curScore.AddNoteOff(nt)
+	nt.noteOn = false
+	curScore.AddNote(nt)
+}
 
-	//fmt.Printf("Track: %v Pos: %v NoteOff (ch %v: key %v)\n", p.Track, p.AbsoluteTicks, channel, key)
+func (pr fileReader) instrument(p reader.Position, name string) {
+	tk := Track{}
+	tk.name = name
+	tk.position = p
 }
 
 func readMidiFile(midiFilePath string) {
 	//var n note
-	var p noteReader
+	var p fileReader
 	rd := reader.New(reader.NoLogger(),
-		//reader.EndOfTrack(),
 		//reader.TempoBPM(),
-
+		reader.Instrument(p.instrument),
 		reader.NoteOn(p.noteOn),
 		reader.NoteOff(p.noteOff),
+		//reader.EndOfTrack(),
+
 	)
 	err := reader.ReadSMFFile(rd, midiFilePath)
 
@@ -92,13 +97,21 @@ func readMidiFile(midiFilePath string) {
 func copyMidiFile(midiFilePath string, midiFileOut string) {
 	readMidiFile(midiFilePath)
 	err := writer.WriteSMF(midiFileOut, 1, func(wr *writer.SMF) error {
-		for _, note := range curScore.notesOn {
+		for _, note := range curScore.msg {
 			wr.SetChannel(note.channel)
-			writer.NoteOn(wr, note.key, note.vel)
+			wr.SetDelta(note.position.DeltaTicks)
+			if note.noteOn {
+				writer.NoteOn(wr, note.key, note.vel)
+
+			}
+			if !note.noteOn {
+				writer.NoteOff(wr, note.key)
+			}
 			//wr.SetDelta()
 			//wr.Position()
 			//writer.EndOfTrack(wr)
 		}
+		writer.EndOfTrack(wr)
 		return nil
 	})
 
@@ -110,15 +123,15 @@ func copyMidiFile(midiFilePath string, midiFileOut string) {
 func main() {
 	actionPtr := flag.String("action", "nil", "What operation to perform. Choose from 'convert', 'read', 'copy' ")
 	midiFileInPtr := flag.String("file_in", "nil", "Midi file to operate on")
-	//midiFileOutPtr := flag.String("file_out", "nil", "path and name of midi file to save")
+	midiFileOutPtr := flag.String("file_out", "nil", "path and name of midi file to save")
 
 	flag.Parse()
 	if *actionPtr == "read" {
 		readMidiFile(*midiFileInPtr)
 	}
-	//if *actionPtr == "copy" {
-	//	copyMidiFile(*midiFileInPtr, *midiFileOutPtr)
-	//}
-	fmt.Println(len(curScore.notesOn))
+	if *actionPtr == "copy" {
+		copyMidiFile(*midiFileInPtr, *midiFileOutPtr)
+	}
+	fmt.Println(len(curScore.msg))
 
 }
