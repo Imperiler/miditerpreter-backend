@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"gitlab.com/gomidi/midi/reader"
 	"gitlab.com/gomidi/midi/writer"
+	"strconv"
 )
 
 type fileReader struct{}
@@ -24,9 +25,9 @@ type Notes struct {
 }
 
 type Track struct {
-	name     string
-	position reader.Position
-	notes    Notes
+	name   string
+	number int16
+	notes  Notes
 }
 
 type Tracks struct {
@@ -39,59 +40,104 @@ type score struct {
 
 var curScore = Notes{}
 var gScore = Tracks{}
+var gTracks = Tracks{}
 
 // AddNote adds item to current score array
 func (nt *Notes) AddNote(item Note) {
 	nt.msg = append(nt.msg, item)
 }
 
+func (at *Tracks) AddTrack(item Track) {
+	at.track = append(at.track, item)
+}
+
+func stringInSlice(a string, list []Track) bool {
+	for _, b := range list {
+		b := strconv.Itoa(int(b.number))
+		if b == a {
+			return true
+		}
+	}
+	return false
+}
+
 func (pr fileReader) noteOn(p *reader.Position, channel, key, vel uint8) {
 	//fmt.Printf("Track: %v Pos: %v NoteOn (ch %v: key %v vel: %v)\n", p.Track, p.AbsoluteTicks, channel, key, vel)
+	tk := Track{}
 	nt := Note{}
+
+	tk.number = p.Track
+	noteTrackStr := strconv.Itoa(int(p.Track))
+
+	// if track doesn't exist, add it
+	if !stringInSlice(noteTrackStr, gTracks.track) {
+		fmt.Printf("equal!")
+		gTracks.AddTrack(tk)
+	}
+	tk.number = p.Track
 	nt.position.AbsoluteTicks = p.AbsoluteTicks
 	nt.position.Track = p.Track
 	nt.position.DeltaTicks = p.DeltaTicks
 	nt.channel = channel
 	nt.key = key
 	nt.vel = vel
+	//tk.notes.AddNote()
 	nt.noteOn = true
-	curScore.AddNote(nt)
+	tk.notes.AddNote(nt)
 }
 
 func (pr fileReader) noteOff(p *reader.Position, channel, key, vel uint8) {
+	tk := Track{}
 	nt := Note{}
+
+	tk.number = p.Track
+	noteTrackStr := strconv.Itoa(int(p.Track))
+
+	// if track doesn't exist, add it
+	if !stringInSlice(noteTrackStr, gTracks.track) {
+		fmt.Printf("equal!")
+		gTracks.AddTrack(tk)
+	}
+	tk.number = p.Track
 	nt.position.AbsoluteTicks = p.AbsoluteTicks
 	nt.position.Track = p.Track
 	nt.position.DeltaTicks = p.DeltaTicks
 	nt.channel = channel
 	nt.key = key
 	nt.vel = vel
+	//tk.notes.AddNote()
 	nt.noteOn = false
-	curScore.AddNote(nt)
+	tk.notes.AddNote(nt)
+
 }
 
 func (pr fileReader) instrument(p reader.Position, name string) {
 	tk := Track{}
 	tk.name = name
-	tk.position = p
+	tk.number = p.Track
+	//fmt.Println(tk.name)
+	gScore.AddTrack(tk)
 }
 
-func readMidiFile(midiFilePath string) {
+func readMidiFile(midiFilePath string) Tracks {
 	//var n note
 	var p fileReader
 	rd := reader.New(reader.NoLogger(),
 		//reader.TempoBPM(),
-		reader.Instrument(p.instrument),
+		//reader.
+		//reader.Instrument(p.instrument),
 		reader.NoteOn(p.noteOn),
 		reader.NoteOff(p.noteOff),
 		//reader.EndOfTrack(),
 
 	)
 	err := reader.ReadSMFFile(rd, midiFilePath)
+	//fmt.Println(gScore.track)
 
 	if err != nil {
 		fmt.Printf("could not read SMF file %v\n", midiFilePath)
 	}
+	return gTracks
 }
 
 func copyMidiFile(midiFilePath string, midiFileOut string) {
@@ -127,11 +173,13 @@ func main() {
 
 	flag.Parse()
 	if *actionPtr == "read" {
-		readMidiFile(*midiFileInPtr)
+		sc := readMidiFile(*midiFileInPtr)
+		fmt.Printf("%v", sc.track)
+
 	}
 	if *actionPtr == "copy" {
 		copyMidiFile(*midiFileInPtr, *midiFileOutPtr)
 	}
-	fmt.Println(len(curScore.msg))
+	//fmt.Println(len(gScore.track))
 
 }
