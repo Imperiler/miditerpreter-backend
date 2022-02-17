@@ -3,9 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"gitlab.com/gomidi/midi/midimessage/meta"
 	"gitlab.com/gomidi/midi/reader"
 	"gitlab.com/gomidi/midi/writer"
-	"strconv"
 )
 
 type fileReader struct{}
@@ -34,13 +34,7 @@ type Tracks struct {
 	track []Track
 }
 
-//type score struct {
-//	Items []Note
-//}
-
-var curScore = Notes{}
-
-//var gScore = Tracks{}
+//var curScore = Notes{}
 var gTracks = Tracks{}
 
 // AddNote adds item to current score array
@@ -54,16 +48,6 @@ func (at *Tracks) AddTrack(item Track) {
 
 func (nt *Track) AddNotes(item Notes) {
 	nt.notes = item
-}
-
-func stringInSlice(a string, list []Track) bool {
-	for _, b := range list {
-		b := strconv.Itoa(int(b.number))
-		if b == a {
-			return true
-		}
-	}
-	return false
 }
 
 func createTrackIfNotExists(trackNum int16) Track {
@@ -115,13 +99,6 @@ func (pr fileReader) noteOff(p *reader.Position, channel, key, vel uint8) {
 	tk := createTrackIfNotExists(p.Track)
 	nt := Note{}
 
-	noteTrackStr := strconv.Itoa(int(p.Track))
-
-	// if track doesn't exist, add it
-	if !stringInSlice(noteTrackStr, gTracks.track) {
-		//fmt.Printf("equal!")
-		gTracks.AddTrack(tk)
-	}
 	tk.number = p.Track
 	nt.position.AbsoluteTicks = p.AbsoluteTicks
 	nt.position.Track = p.Track
@@ -170,23 +147,34 @@ func readMidiFile(midiFilePath string) Tracks {
 
 func copyMidiFile(midiFilePath string, midiFileOut string) {
 	readMidiFile(midiFilePath)
-	err := writer.WriteSMF(midiFileOut, 1, func(wr *writer.SMF) error {
-		for _, note := range curScore.msg {
-			wr.SetChannel(note.channel)
-			wr.SetDelta(note.position.DeltaTicks)
-			if note.noteOn {
-				writer.NoteOn(wr, note.key, note.vel)
+	// count tracks
+	numTracks := uint16(len(gTracks.track))
 
+	err := writer.WriteSMF(midiFileOut, numTracks, func(wr *writer.SMF) error {
+		for _, track := range gTracks.track {
+			if len(track.name) > 0 {
+				wr.Write(meta.Instrument(track.name))
 			}
-			if !note.noteOn {
-				writer.NoteOff(wr, note.key)
+
+			for _, note := range track.notes.msg {
+				wr.SetChannel(note.channel)
+				wr.SetDelta(note.position.DeltaTicks)
+				if note.noteOn {
+					writer.NoteOn(wr, note.key, note.vel)
+
+				}
+				if !note.noteOn {
+					writer.NoteOff(wr, note.key)
+				}
+				//wr.SetDelta()
+				//wr.Position()
+				//writer.EndOfTrack(wr)
 			}
-			//wr.SetDelta()
-			//wr.Position()
-			//writer.EndOfTrack(wr)
+			writer.EndOfTrack(wr)
+			return nil
 		}
-		writer.EndOfTrack(wr)
 		return nil
+
 	})
 
 	if err != nil {
