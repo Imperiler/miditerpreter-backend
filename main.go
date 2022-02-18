@@ -24,6 +24,11 @@ type Notes struct {
 	msg []Note
 }
 
+type Tempo struct {
+	position reader.Position
+	bpm      float64
+}
+
 type Track struct {
 	name   string
 	number int16
@@ -121,12 +126,17 @@ func (pr fileReader) instrument(p reader.Position, name string) {
 	gTracks.AddTrack(tk)
 }
 
+func (pr fileReader) tempobpm(p reader.Position, bpm float64) {
+	tp := Tempo{}
+	tp.bpm = bpm
+	tp.position = p
+}
+
 func readMidiFile(midiFilePath string) Tracks {
 	//var n note
 	var p fileReader
 	rd := reader.New(reader.NoLogger(),
-		//reader.TempoBPM(),
-		//reader.
+		reader.TempoBPM(p.tempobpm),
 		reader.Instrument(p.instrument),
 		reader.NoteOn(p.noteOn),
 		reader.NoteOff(p.noteOff),
